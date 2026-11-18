@@ -1,20 +1,21 @@
 importScripts('./zxing-reader.js');
 ZXingWASM.prepareZXingModule({overrides:{locateFile:path=>new URL('./'+path,self.location.href).href}});
 const OPTIONS={formats:['QRCode','Code128','Code39','Code93','EAN13','EAN8','ITF','DataMatrix','PDF417','UPCA','UPCE'],tryHarder:true,tryRotate:true,tryInvert:true,tryDownscale:true,maxNumberOfSymbols:6};
+const makeImage=(data,width,height)=>typeof ImageData==='function'?new ImageData(data,width,height):{data,width,height};
 function adaptive(image){
   const {width:w,height:h,data}=image,pitch=w+1,gray=new Uint8Array(w*h),sum=new Uint32Array((w+1)*(h+1));
   for(let y=0;y<h;y++){let row=0;for(let x=0;x<w;x++){const i=y*w+x,j=i*4;gray[i]=(data[j]*77+data[j+1]*150+data[j+2]*29)>>8;row+=gray[i];sum[(y+1)*pitch+x+1]=sum[y*pitch+x+1]+row;}}
   const output=new Uint8ClampedArray(w*h*4),radius=10;
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){const l=Math.max(0,x-radius),r=Math.min(w,x+radius+1),t=Math.max(0,y-radius),b=Math.min(h,y+radius+1),mean=(sum[b*pitch+r]-sum[t*pitch+r]-sum[b*pitch+l]+sum[t*pitch+l])/((r-l)*(b-t));const value=gray[y*w+x]<mean-8?0:255,j=(y*w+x)*4;output[j]=output[j+1]=output[j+2]=value;output[j+3]=255;}
-  return new ImageData(output,w,h);
+  return makeImage(output,w,h);
 }
 self.onmessage=async event=>{
   const {id,pixels,width,height,photo}=event.data;
   try {
-    const image=new ImageData(new Uint8ClampedArray(pixels),width,height);
+    const image=makeImage(new Uint8ClampedArray(pixels),width,height);
     let results=(await ZXingWASM.readBarcodes(image,OPTIONS)).filter(r=>r.isValid);
     const useful=hits=>hits.some(r=>r.format==='QRCode'||/^[A-Z][A-Z0-9]{9}$/.test(r.text.trim()));
-    if(!useful(results)&&typeof OffscreenCanvas!=='undefined'){
+    if(!useful(results)&&typeof OffscreenCanvas!=='undefined'&&typeof ImageData==='function'){
       const source=new OffscreenCanvas(width,height);source.getContext('2d').putImageData(image,0,0);
       const target=new OffscreenCanvas(1,1);
       const passes=photo?[
