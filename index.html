@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#112a3b"><meta name="referrer" content="no-referrer">
+  <title>RollScan — สแกน ISN</title>
+  <meta name="description" content="สแกน QR และบาร์โค้ดเพื่อดู ISN, meter, diameter และ kgs จาก Google Sheets">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml"><link rel="stylesheet" href="./styles.css">
+  <script defer src="./config.js"></script><script defer src="./app.js"></script>
+</head>
+<body>
+  <header><a class="brand" href="./"><span class="brand-symbol">▥</span>Roll<span>Scan</span><small>ตรวจสอบข้อมูลม้วน</small></a><button id="settings-button" class="secondary">ตั้งค่าการเชื่อมต่อ</button></header>
+  <main>
+    <div class="intro"><div><p class="eyebrow">ISN SCANNER</p><h1>สแกนและตรวจสอบม้วน</h1><p class="muted">อ่านรหัส แล้วดู meter / diameter / kgs จาก Google Sheets</p></div><div class="connection"><i id="connection-dot"></i><span id="connection-label">ยังไม่ได้เชื่อมต่อ</span></div></div>
+    <div id="message" class="message" role="status" hidden></div>
+    <div class="workspace">
+      <div class="left-column">
+        <section class="card scanner-card"><div class="card-title"><h2>กล้องสแกน</h2><span id="camera-status" class="tag">ปิดอยู่</span></div>
+          <div id="viewfinder" class="viewfinder"><video id="video" playsinline muted aria-label="ภาพกล้องสแกน"></video><div class="scan-frame" aria-hidden="true"><i></i><i></i><i></i><i></i></div><div id="camera-placeholder"><div class="scan-symbol" aria-hidden="true">▥</div><h3>เล็งรหัสให้เห็นครบทั้งตัว</h3><p>อ่านทั้งภาพ ทั้ง QR Code และบาร์โค้ด</p><button id="start-camera" class="primary">เปิดกล้องสแกน</button></div><button id="stop-camera" class="close-camera" aria-label="ปิดกล้อง" hidden>×</button><span id="scan-hint" class="camera-hint" hidden>กำลังค้นหารหัส…</span></div>
+          <div id="camera-controls" class="camera-controls" hidden><select id="camera-select" aria-label="เลือกกล้อง" hidden></select><button id="torch-button" hidden>ไฟฉาย</button><label id="zoom-control" hidden>ซูม <input id="zoom-slider" type="range" aria-label="ระดับซูม"><span id="zoom-label">1×</span></label></div>
+          <div class="scanner-options"><label><input id="continuous" type="checkbox" checked>สแกนต่อเนื่อง</label><label class="photo-button">อ่านจากรูป<input id="photo-input" type="file" accept="image/*"></label><button id="sound-button" class="text-button">เสียง: เปิด</button></div><p class="scan-tip">รหัสจาง: เปิดไฟฉาย ขยับระยะให้โฟกัส และหลบแสงสะท้อน</p>
+        </section>
+        <section class="card manual-card"><h2>เครื่องยิงบาร์โค้ด / ค้นหา ISN</h2><form id="search-form"><input id="code-input" aria-label="รหัส ISN" placeholder="พิมพ์หรือยิงรหัส ISN" spellcheck="false" autocomplete="off"><button class="primary" id="search-button">ค้นหา</button></form><p class="muted">เครื่องยิง USB / Bluetooth: คลิกช่องรหัส แล้วยิงพร้อม Enter</p></section>
+      </div>
+      <section class="card result-card" id="result-panel" aria-live="polite"><div class="card-title"><h2>ผลการตรวจสอบ</h2><span id="match-status" class="tag">รอการสแกน</span></div>
+        <div id="empty-result" class="empty-result"><div class="empty-icon" aria-hidden="true">▥</div><h3>ข้อมูลม้วนจะแสดงตรงนี้</h3><p>สแกน QR / บาร์โค้ด หรือใส่รหัส ISN</p><div class="empty-fields"><span>ISN<b>—</b></span><span>meter<b>—</b></span><span>diameter<b>—</b></span><span>kgs<b>—</b></span></div></div>
+        <div id="found-result" hidden><div class="found-banner">✓ พบข้อมูลใน Google Sheets</div><div class="isn-area"><span>ISN</span><h3 id="result-isn"></h3></div><div class="metrics"><div><span>meter</span><b id="result-meter"></b><small>ความยาว</small></div><div><span>diameter</span><b id="result-diameter"></b><small>เส้นผ่านศูนย์กลาง</small></div><div><span>kgs</span><b id="result-kgs"></b><small>น้ำหนัก (กก.)</small></div></div><p class="result-instruction">เทียบค่าบนฉลากกับข้อมูลด้านบน</p><p id="result-source" class="source-note"></p><button id="next-scan" class="primary next-button">สแกนถัดไป →</button></div>
+        <div id="missing-result" class="empty-result" hidden><div class="missing-icon">?</div><h3>ไม่พบข้อมูลรหัสนี้</h3><code id="missing-code"></code><p>ตรวจรหัสอีกครั้ง หรือเพิ่มข้อมูลใน Google Sheets<br>แล้วกดโหลดข้อมูลล่าสุด</p><button id="missing-next" class="primary">สแกนใหม่</button></div>
+      </section>
+    </div>
+    <div class="data-bar"><span id="data-summary">เชื่อมต่อเพื่อโหลดข้อมูลก่อนเริ่มสแกน</span><button id="refresh-button" class="text-button" disabled>โหลดข้อมูลล่าสุด ↻</button></div>
+    <section class="card history-card"><div class="card-title"><h2>สแกนล่าสุด <span id="history-count">0</span></h2><span class="muted">เฉพาะรอบนี้</span></div><div class="table-wrap"><table><thead><tr><th>เวลา</th><th>ISN / รหัส</th><th>meter</th><th>diameter</th><th>kgs</th><th>ผลลัพธ์</th></tr></thead><tbody id="history-body"></tbody></table><p id="history-empty" class="muted history-empty">ยังไม่มีประวัติการสแกน</p></div></section>
+    <footer><span>RollScan · Google Sheets + Apps Script</span><span>กล้องประมวลผลภาพภายในอุปกรณ์</span></footer>
+  </main>
+  <dialog id="settings-dialog"><form id="settings-form"><div class="dialog-title"><h2>เชื่อมต่อ Google Sheets</h2><button type="button" class="dialog-close" aria-label="ปิดการตั้งค่า">×</button></div><p class="muted">ใช้ URL เว็บแอป Apps Script และคีย์ที่ตั้งไว้ใน Script properties</p><label>Apps Script URL<input id="api-url" type="url" placeholder="https://script.google.com/macros/s/…/exec" required spellcheck="false" autocomplete="off"></label><label>Access key<input id="access-key" type="password" placeholder="กรอกคีย์สำหรับอ่านข้อมูล" required minlength="32" autocomplete="off"></label><p class="settings-note">URL จำไว้ในเครื่องนี้ คีย์เก็บเฉพาะแท็บที่เปิดอยู่ ไม่ใส่ไว้ใน GitHub</p><p id="settings-error" class="error-text" role="alert"></p><div class="dialog-actions"><button id="disconnect-button" type="button">ตัดการเชื่อมต่อ</button><button id="connect-button" class="primary" type="submit">เชื่อมต่อและโหลดข้อมูล</button></div></form></dialog>
+  <dialog id="choices-dialog"><div class="dialog-title"><h2>เลือกรหัสที่ต้องการ</h2><button id="choices-close" aria-label="ปิดตัวเลือกรหัส">×</button></div><div id="choices-list"></div></dialog>
+</body></html>

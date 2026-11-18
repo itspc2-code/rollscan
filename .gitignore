@@ -1,0 +1,9 @@
+# Keep inventory, credentials and local QA output out of GitHub.
+*.xlsx
+*.xls
+*.csv
+*.tsv
+.env*
+.clasp.json
+work/
+node_modules/

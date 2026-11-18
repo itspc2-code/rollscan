@@ -1,0 +1,97 @@
+/** RollScan read-only API. Never put ACCESS_KEY in GitHub source. */
+const ROLLSCAN_VERSION = '1.0.0';
+
+function setupRollScan() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet();
+  if (!sheet) throw new Error('เปิด Apps Script จาก Extensions ของ Google Sheets ที่นำเข้า Book1 ก่อน');
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('SPREADSHEET_ID', sheet.getId());
+  if (!props.getProperty('SHEET_NAME')) props.setProperty('SHEET_NAME', sheet.getSheets()[0].getName());
+  if (!props.getProperty('ACCESS_KEY')) props.setProperty('ACCESS_KEY', Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, ''));
+  console.log('ตั้งค่าเรียบร้อย ดู ACCESS_KEY ได้ใน Project Settings → Script properties');
+  return { ready: true, sheet: props.getProperty('SHEET_NAME') };
+}
+
+function doGet(e) {
+  const params = e && e.parameter || {};
+  const callback = String(params.callback || '');
+  if (callback && !/^rollscan_[A-Za-z0-9_]{8,90}$/.test(callback)) return jsonOutput_({ ok: false, error: 'INVALID_CALLBACK' });
+  let body;
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const secret = props.getProperty('ACCESS_KEY') || '';
+    if (secret.length < 32 || !equalKey_(String(params.key || ''), secret)) throw new Error('UNAUTHORIZED');
+    const action = String(params.action || 'lookup');
+    if (action === 'ping') body = { ok: true, version: ROLLSCAN_VERSION };
+    else if (action === 'index') body = { ok: true, records: readRecords_(), updatedAt: new Date().toISOString() };
+    else if (action === 'lookup') {
+      const code = normalize_(params.code);
+      if (!code || code.length > 160) throw new Error('INVALID_CODE');
+      body = { ok: true, records: readRecords_().filter(r => normalize_(r.isn) === code || normalize_(r.newisn) === code), updatedAt: new Date().toISOString() };
+    } else throw new Error('INVALID_ACTION');
+  } catch (error) {
+    const known = ['UNAUTHORIZED', 'INVALID_CODE', 'INVALID_ACTION', 'SHEET_NOT_FOUND', 'INVALID_HEADERS', 'DUPLICATE_ISN'];
+    const reason = error && error.message || '';
+    body = { ok: false, error: known.indexOf(reason) >= 0 ? reason : 'SERVER_ERROR' };
+  }
+  return jsonOutput_(body, callback);
+}
+
+function readRecords_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('SPREADSHEET_ID');
+  const name = props.getProperty('SHEET_NAME');
+  if (!id || !name) throw new Error('SHEET_NOT_FOUND');
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'rollscan-v1-' + id + '-' + name;
+  const metadata = cache.get(cacheKey);
+  if (metadata) {
+    try {
+      const info = JSON.parse(metadata);
+      const names = Array.from({ length: info.chunks }, (_, i) => cacheKey + ':' + info.id + ':' + i);
+      const parts = cache.getAll(names);
+      if (names.every(n => parts[n] !== undefined)) return JSON.parse(names.map(n => parts[n]).join(''));
+    } catch (_) { /* An expired or evicted cache is rebuilt from Sheets. */ }
+  }
+  const book = SpreadsheetApp.openById(id), sheet = book.getSheetByName(name);
+  if (!sheet) throw new Error('SHEET_NOT_FOUND');
+  const grid = sheet.getDataRange().getDisplayValues();
+  const headers = (grid[0] || []).map(v => String(v).trim().toLowerCase());
+  const fields = ['isn', 'meter', 'diameter', 'kgs', 'newisn'];
+  if (!['isn', 'meter', 'diameter', 'kgs'].every(f => headers.indexOf(f) >= 0)) throw new Error('INVALID_HEADERS');
+  for (const field of fields) if (headers.indexOf(field) !== headers.lastIndexOf(field)) throw new Error('INVALID_HEADERS');
+  const positions = fields.map(f => headers.indexOf(f));
+  const records = [], seen = Object.create(null);
+  for (let row = 1; row < grid.length; row++) {
+    const record = {};
+    fields.forEach((f, i) => { record[f] = positions[i] < 0 ? '' : String(grid[row][positions[i]] || '').trim(); });
+    record.isn = normalize_(record.isn);
+    record.newisn = normalize_(record.newisn);
+    if (!record.isn) continue;
+    if (seen[record.isn]) throw new Error('DUPLICATE_ISN');
+    seen[record.isn] = true;
+    records.push(record);
+  }
+  const data = JSON.stringify(records), chunkSize = 20000;
+  // 20k UTF-16 characters remain below CacheService's 100KB per-item limit.
+  const chunks = Math.ceil(data.length / chunkSize), chunkId = Utilities.getUuid().replace(/-/g, '');
+  const values = {};
+  for (let i = 0; i < chunks; i++) values[cacheKey + ':' + chunkId + ':' + i] = data.slice(i * chunkSize, (i + 1) * chunkSize);
+  if (chunks <= 300) {
+    try { cache.putAll(values, 30); cache.put(cacheKey, JSON.stringify({ chunks, id: chunkId }), 30); } catch (_) {}
+  }
+  return records;
+}
+
+function normalize_(value) { return String(value == null ? '' : value).trim().toUpperCase(); }
+function equalKey_(provided, expected) {
+  if (provided.length !== expected.length) return false;
+  let difference = 0;
+  for (let i = 0; i < expected.length; i++) difference |= provided.charCodeAt(i) ^ expected.charCodeAt(i);
+  return difference === 0;
+}
+function jsonOutput_(value, callback) {
+  const json = JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+  return ContentService.createTextOutput(callback ? callback + '(' + json + ');' : json)
+    .setMimeType(callback ? ContentService.MimeType.JAVASCRIPT : ContentService.MimeType.JSON);
+}
