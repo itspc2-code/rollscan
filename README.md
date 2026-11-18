@@ -1,9 +1,5 @@
 # RollScan 1.2.1 — ติดตั้ง / อัปเดต
 
-เว็บ: https://itspc2-code.github.io/rollscan/
-Repository: https://github.com/itspc2-code/rollscan
-Google Sheet: https://docs.google.com/spreadsheets/d/1L-Lng2sT21rGlo-F6L6RkZAbSctGWhapfPfodkmkHR8/edit
-
 ## สิ่งที่อยู่ใน GitHub / Apps Script
 - GitHub: ไฟล์หน้าเว็บทั้งหมดในโฟลเดอร์นี้ **ยกเว้น Code.gs และ appsscript.json** — ไม่มีคีย์ ไม่มี URL /exec ไม่มีข้อมูลม้วน (`config.js` เว้น apiUrl ว่างไว้)
 - Apps Script: `Code.gs` (ACCESS_KEY อยู่ใน Script properties เท่านั้น)
