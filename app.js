@@ -22,7 +22,7 @@
   function validateRecords(rows){
     if(!Array.isArray(rows)||rows.length>100000)throw new Error('รูปแบบข้อมูลจากชีตไม่ถูกต้อง');
     const index=new Map(),records=[],seen=new Set();let duplicates=0;
-    for(const row of rows){const clean={};for(const field of ['isn','meter','diameter','kgs','newisn','checked_at','checked_by']){const value=row?.[field];if(value!==undefined&&typeof value!=='string'&&typeof value!=='number')throw new Error('รูปแบบข้อมูลจากชีตไม่ถูกต้อง');clean[field]=String(value??'').trim();}clean.isn=norm(clean.isn);clean.newisn=norm(clean.newisn);if(!clean.isn)continue;if(seen.has(clean.isn)){duplicates++;continue;}seen.add(clean.isn);records.push(clean);for(const code of new Set([clean.isn,clean.newisn].filter(Boolean)))index.set(code,[...(index.get(code)||[]),clean]);}
+    for(const row of rows){const clean={};for(const field of ['isn','meter','diameter','kgs','po_grade','po_width','newisn','checked_at','checked_by']){const value=row?.[field];if(value!==undefined&&typeof value!=='string'&&typeof value!=='number')throw new Error('รูปแบบข้อมูลจากชีตไม่ถูกต้อง');clean[field]=String(value??'').trim();}clean.isn=norm(clean.isn);clean.newisn=norm(clean.newisn);if(!clean.isn)continue;if(seen.has(clean.isn)){duplicates++;continue;}seen.add(clean.isn);records.push(clean);for(const code of new Set([clean.isn,clean.newisn].filter(Boolean)))index.set(code,[...(index.get(code)||[]),clean]);}
     return {records,index,duplicates};
   }
   async function connect(event){event?.preventDefault();$('settings-error').textContent='';const old={apiUrl:state.apiUrl,accessKey:state.accessKey};
@@ -185,7 +185,7 @@
       if(caps.zoom){$('zoom-slider').min=caps.zoom.min;$('zoom-slider').max=Math.min(caps.zoom.max,5);$('zoom-slider').step=caps.zoom.step||0.1;$('zoom-slider').value=track.getSettings().zoom||caps.zoom.min;$('zoom-label').textContent=Number($('zoom-slider').value).toFixed(1)+'×';}
       const cameras=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');$('camera-select').replaceChildren();for(const camera of cameras){const option=document.createElement('option');option.value=camera.deviceId;option.textContent=camera.label||'กล้อง';$('camera-select').append(option);}$('camera-select').value=track.getSettings().deviceId||deviceId;$('camera-select').hidden=cameras.length<2;
       $('camera-controls').hidden=!caps.torch&&!caps.zoom&&cameras.length<2;$('viewfinder').classList.add('active');$('camera-placeholder').hidden=true;$('stop-camera').hidden=false;$('scan-hint').hidden=false;$('camera-status').textContent='พร้อมอ่าน';state.paused=false;state.last='';
-      const worker=new Worker('./scanner-worker.js?v=1.3.1');state.worker=worker;
+      const worker=new Worker('./scanner-worker.js?v=1.3.2');state.worker=worker;
       const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});
       const tick=()=>{if(!state.stream||generation!==state.generation)return;if(state.paused||$('settings-dialog').open||$('add-dialog').open||$('scan-dialog').open||$('video').readyState<2){state.timer=setTimeout(tick,150);return;}state.frame++;
         // 1.3.1 กล้องสด: แต่ละเฟรมอ่านคนละส่วน (ทั้งภาพ / กลางจอขยาย 2× / แบ่ง 2×2 และ 3×3 แล้วขยาย) วนครบทุก ~1–2 วินาที ทำให้โค้ดเล็ก/ไกลอ่านติด
@@ -201,7 +201,7 @@
   }
   async function readPhoto(file){
     if(!state.connected){openSettings();return;}if(file.size>20*1024*1024){message('เลือกรูปขนาดไม่เกิน 20 MB',true);return;}
-    const wasPaused=state.paused;let completed=false;state.paused=true;message('กำลังอ่านรหัสจากรูป…');const worker=new Worker('./scanner-worker.js?v=1.3.1');let timeout;
+    const wasPaused=state.paused;let completed=false;state.paused=true;message('กำลังอ่านรหัสจากรูป…');const worker=new Worker('./scanner-worker.js?v=1.3.2');let timeout;
     try{const bitmap=await createImageBitmap(file);const ratio=Math.min(1,3000/Math.max(bitmap.width,bitmap.height)),canvas=document.createElement('canvas');canvas.width=Math.round(bitmap.width*ratio);canvas.height=Math.round(bitmap.height*ratio);const ctx=canvas.getContext('2d');ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();const image=ctx.getImageData(0,0,canvas.width,canvas.height);
       const hits=await new Promise((resolve,reject)=>{timeout=setTimeout(()=>reject(new Error('อ่านรูปหมดเวลา กรุณาลองรูปที่ชัดขึ้น')),20000);worker.onmessage=e=>e.data.error?reject(new Error(e.data.error)):resolve(e.data.results||[]);worker.onerror=()=>reject(new Error('โหลดตัวอ่านรูปไม่สำเร็จ'));worker.postMessage({id:0,photo:true,pixels:image.data.buffer,width:image.width,height:image.height},[image.data.buffer]);});
       state.paused=false;if(hits.length){completed=true;message('');accept(hits,true);}else message('ยังอ่านรหัสจากรูปนี้ไม่ได้ ลองถ่ายให้รหัสครบและชัดขึ้น',true);
@@ -218,6 +218,7 @@
     $('scan-dialog').className='scan-dialog '+(record?'found':'missing');$('scan-dialog-title').textContent=record?'✓ มีข้อมูลอยู่แล้ว':'ไม่พบข้อมูล';
     body.append(el('div','scan-dialog-label','ISN'),el('div','scan-dialog-isn',record?.isn||raw));
     if(record){
+      const info=el('div','scan-dialog-info');for(const[field,th]of[['po_grade','เกรด'],['po_width','หน้ากว้าง']]){const box=el('div');box.append(el('span','',field),el('b','',record[field]||'—'),el('small','',th));info.append(box);}body.append(info);
       const grid=el('div','metrics scan-dialog-metrics');for(const[field,th]of[['meter','ความยาว'],['diameter','เส้นผ่านศูนย์กลาง'],['kgs','น้ำหนัก (กก.)']]){const box=el('div');box.append(el('span','',field),el('b','',record[field]||'—'),el('small','',th));grid.append(box);}body.append(grid);
       const checks=label?DATA.compareLabel(record,label):null;
       if(checks){const same=checks.every(c=>c.match);body.append(el('p','scan-dialog-note '+(same?'same':'different'),same?'ค่าบน QR ตรงกับชีต':'ค่าบน QR ต่างจากชีต: '+checks.filter(c=>!c.match).map(c=>`${c.field} ชีต ${c.sheet||'—'} / QR ${c.printed||'—'}`).join(', ')));}
