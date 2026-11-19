@@ -22,12 +22,12 @@
   function validateRecords(rows){
     if(!Array.isArray(rows)||rows.length>100000)throw new Error('รูปแบบข้อมูลจากชีตไม่ถูกต้อง');
     const index=new Map(),records=[],seen=new Set();let duplicates=0;
-    for(const row of rows){const clean={};for(const field of ['isn','meter','diameter','kgs','newisn']){const value=row?.[field];if(value!==undefined&&typeof value!=='string'&&typeof value!=='number')throw new Error('รูปแบบข้อมูลจากชีตไม่ถูกต้อง');clean[field]=String(value??'').trim();}clean.isn=norm(clean.isn);clean.newisn=norm(clean.newisn);if(!clean.isn)continue;if(seen.has(clean.isn)){duplicates++;continue;}seen.add(clean.isn);records.push(clean);for(const code of new Set([clean.isn,clean.newisn].filter(Boolean)))index.set(code,[...(index.get(code)||[]),clean]);}
+    for(const row of rows){const clean={};for(const field of ['isn','meter','diameter','kgs','newisn','checked_at','checked_by']){const value=row?.[field];if(value!==undefined&&typeof value!=='string'&&typeof value!=='number')throw new Error('รูปแบบข้อมูลจากชีตไม่ถูกต้อง');clean[field]=String(value??'').trim();}clean.isn=norm(clean.isn);clean.newisn=norm(clean.newisn);if(!clean.isn)continue;if(seen.has(clean.isn)){duplicates++;continue;}seen.add(clean.isn);records.push(clean);for(const code of new Set([clean.isn,clean.newisn].filter(Boolean)))index.set(code,[...(index.get(code)||[]),clean]);}
     return {records,index,duplicates};
   }
   async function connect(event){event?.preventDefault();$('settings-error').textContent='';const old={apiUrl:state.apiUrl,accessKey:state.accessKey};
     try{const pasted=$('api-url').value.trim().match(/#connect=([A-Za-z0-9_-]+)/);if(pasted){const data=JSON.parse(b64url.dec(pasted[1]));$('api-url').value=String(data.u||'');$('access-key').value=String(data.k||'');}state.apiUrl=apiUrl($('api-url').value.trim());state.accessKey=$('access-key').value.trim();if(state.accessKey.length<32)throw new Error('Access key ต้องมีอย่างน้อย 32 ตัวอักษร');$('connect-button').disabled=true;$('connect-button').textContent='กำลังโหลดข้อมูล…';await refresh(true);storage.set('rollscan-api-url',state.apiUrl);storage.set('rollscan-key',state.accessKey);storage.remove('rollscan-key',true);renderShare();message('เชื่อมต่อแล้ว — เครื่องนี้จำไว้แล้ว ครั้งต่อไปไม่ต้องใส่อีก');}
-    catch(error){state.apiUrl=old.apiUrl;state.accessKey=old.accessKey;$('settings-error').textContent=error.message;}
+    catch(error){const tried=state.apiUrl;state.apiUrl=old.apiUrl;state.accessKey=old.accessKey;$('settings-error').textContent=error.message;if(/^https:\/\/script\.google\.com\//.test(tried||'')){const a=document.createElement('a');a.href=tried+'?action=ping';a.target='_blank';a.rel='noopener noreferrer';a.textContent=' · เปิดทดสอบลิงก์นี้ (ถ้าขึ้นหน้าเข้าสู่ระบบ Google = ตั้งสิทธิ์ Deploy ผิด ต้องเป็น "ทุกคน")';$('settings-error').append(a);}}
     finally{$('connect-button').disabled=false;$('connect-button').textContent='เชื่อมต่อและโหลดข้อมูล';}
   }
   async function refresh(fromSettings=false,silent=false){
@@ -38,18 +38,18 @@
     finally{$('refresh-button').disabled=!state.connected;}
   }
   function openSettings(){$('api-url').value=state.apiUrl||storage.get('rollscan-api-url')||window.ROLLSCAN_CONFIG?.apiUrl||'';$('access-key').value=state.accessKey||storage.get('rollscan-key')||storage.get('rollscan-key',true);$('scanner-name').value=state.name;$('settings-error').textContent='';renderShare();$('settings-dialog').showModal();}
-  function disconnect(){stopCamera();state.dataGeneration++;state.generation++;state.requestId++;state.records=[];state.index.clear();state.connected=false;state.apiUrl='';state.accessKey='';storage.remove('rollscan-key',true);storage.remove('rollscan-key');storage.remove('rollscan-api-url');storage.remove('rollscan-index');renderShare();$('access-key').value='';$('connection-dot').classList.remove('connected');$('connection-label').textContent='ยังไม่ได้เชื่อมต่อ';$('data-summary').textContent='เชื่อมต่อเพื่อโหลดข้อมูลก่อนเริ่มสแกน';$('refresh-button').disabled=true;$('history-body').replaceChildren();$('history-count').textContent='0';$('history-empty').hidden=false;clearResult();$('settings-dialog').close();message('ตัดการเชื่อมต่อแล้ว');}
+  function disconnect(){stopCamera();state.dataGeneration++;state.generation++;state.requestId++;state.records=[];state.index.clear();state.connected=false;state.apiUrl='';state.accessKey='';storage.remove('rollscan-key',true);storage.remove('rollscan-key');storage.remove('rollscan-api-url');storage.remove('rollscan-index');if(location.hash.startsWith('#connect='))history.replaceState(null,'',location.pathname+location.search);renderShare();$('access-key').value='';$('connection-dot').classList.remove('connected');$('connection-label').textContent='ยังไม่ได้เชื่อมต่อ';$('data-summary').textContent='เชื่อมต่อเพื่อโหลดข้อมูลก่อนเริ่มสแกน';$('refresh-button').disabled=true;$('history-body').replaceChildren();$('history-count').textContent='0';$('history-empty').hidden=false;clearResult();$('settings-dialog').close();message('ตัดการเชื่อมต่อแล้ว');}
   function feedback(found){try{navigator.vibrate?.(found?70:[60,70,60]);if(!state.sound)return;state.audio||=(new(window.AudioContext||window.webkitAudioContext)());const audio=state.audio;audio.resume();const oscillator=audio.createOscillator(),gain=audio.createGain();oscillator.connect(gain);gain.connect(audio.destination);oscillator.frequency.value=found?1046:330;gain.gain.setValueAtTime(0.05,audio.currentTime);gain.gain.exponentialRampToValueAtTime(0.001,audio.currentTime+0.17);oscillator.start();oscillator.stop(audio.currentTime+0.18);}catch{}}
   function clearResult(){state.paused=false;state.last='';state.displayedIsn='';state.lastHadLabel=false;$('qr-comparison').hidden=true;$('empty-result').hidden=false;$('found-result').hidden=true;$('missing-result').hidden=true;$('match-status').textContent='รอการสแกน';$('match-status').className='tag';$('code-input').value='';$('scan-hint').textContent='กำลังค้นหารหัส…';}
-  function showResult(record,raw,label=null){
+  function showResult(record,raw,label=null,options={}){
     state.missingScan=label||{isn:raw};state.displayedIsn=record?.isn||'';state.lastHadLabel=!!label;renderComparison(record,label);
     $('empty-result').hidden=true;$('found-result').hidden=!record;$('missing-result').hidden=!!record;
     $('match-status').textContent=record?'พบข้อมูล':'ไม่พบข้อมูล';$('match-status').className='tag '+(record?'found':'missing');
     if(record){for(const field of ['isn','meter','diameter','kgs'])$('result-'+field).textContent=record[field]===''?'—':record[field];$('result-source').textContent=`ข้อมูลที่โหลดจากชีตเวลา ${state.loadedAt} · กดโหลดข้อมูลล่าสุดเมื่อแก้ไขชีต`;}
     else $('missing-code').textContent=raw;
-    addHistory(record,raw);enqueueLog(record,raw,label);feedback(!!record);if(!$('continuous').checked){state.paused=true;$('scan-hint').textContent='พักอ่านรหัส — กดสแกนถัดไป';}if(innerWidth<=760)$('result-panel').scrollIntoView({behavior:'smooth',block:'start'});
+    const historyRow=addHistory(record,raw,options.silent?'เพิ่มใหม่':(record?'รอยืนยัน':'ไม่พบ'));feedback(!!record);if(options.silent)return;enqueueLog(record,raw,label,record?'รอยืนยัน':'ไม่พบ');openScanDialog(record,raw,label,historyRow);if(innerWidth<=760)$('result-panel').scrollIntoView({behavior:'smooth',block:'start'});
   }
-  function addHistory(record,raw){const row=document.createElement('tr');for(const text of [new Date().toLocaleTimeString('th-TH'),record?.isn||raw,record?.meter??'—',record?.diameter??'—',record?.kgs??'—',record?'พบข้อมูล':'ไม่พบข้อมูล']){const cell=document.createElement('td');cell.textContent=text;row.append(cell);}$('history-body').prepend(row);while($('history-body').children.length>50)$('history-body').lastChild.remove();$('history-count').textContent=String($('history-body').children.length);$('history-empty').hidden=true;}
+  function addHistory(record,raw,status){const row=document.createElement('tr');for(const text of [new Date().toLocaleTimeString('th-TH'),record?.isn||raw,record?.meter??'—',record?.diameter??'—',record?.kgs??'—',status||(record?'พบข้อมูล':'ไม่พบข้อมูล')]){const cell=document.createElement('td');cell.textContent=text;row.append(cell);}$('history-body').prepend(row);while($('history-body').children.length>50)$('history-body').lastChild.remove();$('history-count').textContent=String($('history-body').children.length);$('history-empty').hidden=true;return row;}
   function choose(entries,onChoose){state.paused=true;const list=$('choices-list');list.replaceChildren();for(const entry of entries){const button=document.createElement('button');button.textContent=entry.label;button.onclick=()=>{$('choices-dialog').close();state.paused=false;onChoose(entry);};list.append(button);}$('choices-dialog').showModal();}
   function renderComparison(record,label){
     const container=$('qr-comparison');container.replaceChildren();container.hidden=!record||!label;if(container.hidden)return;
@@ -65,7 +65,7 @@
     if(hits.length>1)choose(hits.map(record=>({label:record.isn,record})),entry=>showResult(entry.record,scan.isn,scan.label));else showResult(hits[0]||null,scan.isn,scan.label);
   }
   function accept(hits,photo=false){
-    if(!hits.length||state.paused||state.checking||$('settings-dialog').open||$('add-dialog').open)return;
+    if(!hits.length||state.paused||state.checking||$('settings-dialog').open||$('add-dialog').open||$('scan-dialog').open)return;
     const unique=DATA.groupHits(hits),signature=unique.map(h=>h.scan.isn).sort().join('|');
     if(!photo&&signature===state.last){const richer=unique.find(h=>h.scan.label&&h.scan.isn===state.displayedIsn);if(richer&&!state.lastHadLabel){const record=state.records.find(r=>r.isn===state.displayedIsn);renderComparison(record,richer.scan.label);state.lastHadLabel=true;}return;}
     const repeat=!photo&&unique.some(h=>!['QRCode','DataMatrix','PDF417'].includes(h.format));const now=Date.now();
@@ -74,6 +74,7 @@
     if(unique.length>1)choose(unique.map(h=>({label:h.scan.isn,code:h.text})),entry=>lookup(entry.code));else lookup(unique[0].text);
   }
   function openAdd(){
+    state.addSaved=false;state.paused=true;
     const initial=state.missingScan||{isn:$('missing-code').textContent};const container=$('add-fields');container.replaceChildren();$('add-error').textContent='';
     const groups=[['ข้อมูลหลัก',['isn','meter','diameter','kgs']],['ผู้จำหน่ายและการสั่งซื้อ',['supplier_code','supplier_name','po_no','dp_no','po_grade','po_width','po_quality','supplier_grade']],['ราคาและเอกสาร',['price_per_kgs','disc','current_price','total_amount','docno','newisn','status']],['ค่าที่วัดจริง',['meter_actual','diameter_actual','kgs_actual']]];
     for(const[title,fields]of groups){const fieldset=document.createElement('fieldset'),legend=document.createElement('legend');legend.textContent=title;fieldset.append(legend);const grid=document.createElement('div');grid.className='add-field-grid';for(const field of fields){const label=document.createElement('label');label.textContent=field+(['isn','meter','diameter','kgs'].includes(field)?' *':'');const input=document.createElement('input');input.name=field;input.type='text';if(DATA.NUMERIC.has(field)){input.inputMode='decimal';input.autocomplete='off';}input.value=initial[field]||'';input.required=['isn','meter','diameter','kgs'].includes(field);input.maxLength=1000;label.append(input);grid.append(label);}fieldset.append(grid);container.append(fieldset);}$('add-dialog').showModal();
@@ -83,11 +84,11 @@
     try{
       const data=DATA.cleanRecord(Object.fromEntries(new FormData($('add-form'))));state.adding=true;$('add-submit').disabled=true;$('add-cancel').disabled=true;$('add-close').disabled=true;$('add-submit').textContent='กำลังบันทึก…';
       const id=crypto.randomUUID();
-      await fetch(state.apiUrl,{method:'POST',mode:'no-cors',credentials:'omit',redirect:'follow',referrerPolicy:'no-referrer',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'add',key:state.accessKey,id,data,by:state.name})});
+      await fetch(state.apiUrl,{method:'POST',mode:'no-cors',credentials:'omit',redirect:'follow',referrerPolicy:'no-referrer',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'add',key:state.accessKey,id,data,by:state.name,raw:String(state.lastRaw||'').slice(0,300)})});
       let saved=null;for(let attempt=0;attempt<16;attempt++){const result=await request('operation',{id});if(result.done){saved=result.record;break;}await new Promise(resolve=>setTimeout(resolve,750));}
       if(!saved)throw new Error('ยังยืนยันผลบันทึกไม่ได้ กรุณาโหลดข้อมูลล่าสุดและค้นหา ISN นี้ก่อนลองอีกครั้ง');
-      const updated=validateRecords([...state.records.filter(r=>r.isn!==saved.isn),saved]);state.records=updated.records;state.index=updated.index;$('data-summary').textContent=state.records.length.toLocaleString()+' รายการ · มีรายการเพิ่มล่าสุด';$('add-dialog').close();saveIndexCache(state.records);state.nextLogResult='เพิ่มใหม่';showResult(saved,saved.isn,state.missingScan?.meter?state.missingScan:null);message('เพิ่มรายการลง Google Sheets แล้ว');
-    }catch(error){$('add-error').textContent=error.message||'บันทึกไม่สำเร็จ กรุณาค้นหารหัสก่อนลองใหม่';if(error.message===ERROR_MESSAGES.DUPLICATE_ISN)refresh(false,true).catch(()=>{});}
+      const updated=validateRecords([...state.records.filter(r=>r.isn!==saved.isn),saved]);state.records=updated.records;state.index=updated.index;$('data-summary').textContent=state.records.length.toLocaleString()+' รายการ · มีรายการเพิ่มล่าสุด';state.addSaved=true;$('add-dialog').close();saveIndexCache(state.records);showResult(saved,saved.isn,state.missingScan?.meter?state.missingScan:null,{silent:true});message('เพิ่มรายการลง wh1-14 แล้ว — สแกนต่อได้เลย');resumeScan();
+    }catch(error){$('add-error').textContent=error.message||'บันทึกไม่สำเร็จ กรุณาค้นหารหัสก่อนลองใหม่';if(error.message===ERROR_MESSAGES.DUPLICATE_ISN){$('add-error').textContent='ISN นี้มีข้อมูลอยู่แล้วในชีต — กด × แล้วสแกนใหม่';refresh(false,true).catch(()=>{});}}
     finally{state.adding=false;$('add-submit').disabled=false;$('add-cancel').disabled=false;$('add-close').disabled=false;$('add-submit').textContent='บันทึกลง Google Sheets';}
   }
 
@@ -98,11 +99,16 @@
     const box=$('share-box');if(!box)return;const ready=state.connected&&state.apiUrl&&state.accessKey;box.hidden=!ready;$('share-qr').replaceChildren();if(!ready||typeof qrcode!=='function')return;
     const qr=qrcode(0,'M');qr.addData(shareLink());qr.make();$('share-qr').innerHTML=qr.createSvgTag({cellSize:4,margin:4,scalable:true});
   }
+  function printQr(){
+    const qr=qrcode(0,'M');qr.addData(shareLink());qr.make();const win=window.open('','_blank');if(!win){message('เบราว์เซอร์บล็อกหน้าต่างใหม่ — อนุญาตป๊อปอัปแล้วลองอีกครั้ง',true);return;}
+    win.document.write('<!doctype html><meta charset="utf-8"><title>RollScan QR</title><style>body{font-family:Tahoma,sans-serif;text-align:center;padding:30px}svg{width:340px;height:340px}h1{font-size:30px;margin:0 0 6px}p{font-size:16px;color:#444}</style><h1>RollScan สแกนม้วน</h1><p>สแกน QR นี้ด้วยกล้องมือถือ เปิดแล้วใช้ได้ทันที</p>'+qr.createSvgTag({cellSize:8,margin:4,scalable:true})+'<p style="font-size:12px;color:#888">สำหรับพนักงานเท่านั้น ห้ามถ่ายรูปส่งออกนอกบริษัท</p><script>setTimeout(()=>print(),300)<\/script>');win.document.close();
+  }
   function readConnectLink(){
     const match=location.hash.match(/^#connect=([A-Za-z0-9_-]+)$/);if(!match)return false;
-    history.replaceState(null,'',location.pathname+location.search); // เอาคีย์ออกจากแถบที่อยู่ทันที
+    // ลิงก์นี้คือ "ลิงก์แอป": เก็บ #connect ไว้ในแถบที่อยู่ เพื่อให้บุ๊กมาร์ก/ไอคอนหน้าจอโฮมเชื่อมต่อเองทุกครั้ง
     try{const data=JSON.parse(b64url.dec(match[1]));const url=apiUrl(String(data.u||''));const key=String(data.k||'');if(key.length<32)throw new Error();
-      if(url!==storage.get('rollscan-api-url'))storage.remove('rollscan-index');storage.set('rollscan-api-url',url);storage.set('rollscan-key',key);return true;}
+      const changed=url!==storage.get('rollscan-api-url')||key!==storage.get('rollscan-key');
+      if(url!==storage.get('rollscan-api-url'))storage.remove('rollscan-index');storage.set('rollscan-api-url',url);storage.set('rollscan-key',key);return changed;}
     catch{message('ลิงก์เชื่อมต่อไม่ถูกต้อง ขอลิงก์ใหม่จากเครื่องที่เชื่อมต่อแล้ว',true);return false;}
   }
   function askName(){if(state.name||storage.get('rollscan-name-asked'))return;storage.set('rollscan-name-asked','1');const name=prompt('ชื่อผู้สแกน (บันทึกในชีตประวัติสแกน) — เว้นว่างได้','');if(name&&name.trim()){state.name=name.trim().slice(0,60);storage.set('rollscan-name',state.name);}}
@@ -116,14 +122,14 @@
       $('connection-label').textContent='ใช้ข้อมูลในเครื่อง · กำลังอัปเดต…';$('data-summary').textContent=`${state.records.length.toLocaleString()} รายการ · ข้อมูลในเครื่องเมื่อ ${state.loadedAt}`;$('refresh-button').disabled=false;return true;}
     catch{return false;}
   }
-  function autoRefresh(maxAge){if(!state.connected||document.hidden||state.adding||state.checking||$('add-dialog').open||$('settings-dialog').open)return;if(Date.now()-state.lastRefresh<maxAge)return;state.lastRefresh=Date.now();refresh(false,true).catch(()=>{});}
+  function autoRefresh(maxAge){if(!state.connected||document.hidden||state.adding||state.checking||$('add-dialog').open||$('settings-dialog').open||$('scan-dialog').open)return;if(Date.now()-state.lastRefresh<maxAge)return;state.lastRefresh=Date.now();refresh(false,true).catch(()=>{});}
 
   /* ---------- 1.2: ไม่เจอในเครื่อง → ถามชีตล่าสุดก่อนขึ้นว่าไม่พบ ---------- */
   async function recheck(scan){
     state.checking=true;state.paused=true;$('scan-hint').textContent='กำลังตรวจในชีตล่าสุด…';$('match-status').textContent='กำลังตรวจในชีต…';$('match-status').className='tag';
     try{const code=scan.isn;if(code&&code.length<=160){const body=await request('lookup',{code,fresh:1});const found=(body.records||[]).filter(r=>r&&r.isn);
       if(found.length){const keep=new Set(found.map(r=>norm(r.isn)));const updated=validateRecords([...state.records.filter(r=>!keep.has(r.isn)),...found]);state.records=updated.records;state.index=updated.index;saveIndexCache(state.records);}}}
-    catch(error){message('ตรวจกับชีตล่าสุดไม่ได้ ('+error.message+') — ผลนี้มาจากข้อมูลในเครื่อง',true);}
+    catch(error){message('ตรวจกับชีตล่าสุดไม่ได้ ('+error.message+') — ยังยืนยันไม่ได้ว่ามีข้อมูลหรือไม่ กรุณาลองอีกครั้งเมื่อเชื่อมต่อได้',true);$('match-status').textContent='ตรวจสอบไม่ได้';$('match-status').className='tag';$('found-result').hidden=true;$('missing-result').hidden=true;$('empty-result').hidden=false;state.last='';return;}
     finally{state.checking=false;state.paused=false;}
     const hits=[...new Map(scan.codes.flatMap(k=>state.index.get(k)||[]).map(r=>[r.isn,r])).values()];
     if(hits.length>1)choose(hits.map(record=>({label:record.isn,record})),entry=>showResult(entry.record,scan.isn,scan.label));else showResult(hits[0]||null,scan.isn,scan.label);
@@ -132,10 +138,10 @@
   /* ---------- 1.2: ประวัติสแกนลงชีต (ส่งเป็นชุด, เน็ตหลุดก็ไม่หาย) ---------- */
   function updateLogBadge(){const n=state.logQueue.length+(state.logInflight?.entries.length||0);$('log-status').textContent=n?`ประวัติรอส่ง ${n}`:'';}
   function saveLogQueue(){storage.set('rollscan-logq',JSON.stringify(state.logQueue));storage.set('rollscan-loginflight',state.logInflight?JSON.stringify(state.logInflight):'null');updateLogBadge();}
-  function enqueueLog(record,raw,label){
+  function enqueueLog(record,raw,label,result){
     const checks=record&&label?DATA.compareLabel(record,label):null;
     const qr=checks?(checks.every(c=>c.match)?'ตรง':'ต่าง: '+checks.filter(c=>!c.match).map(c=>`${c.field} ${c.sheet||'—'}→${c.printed||'—'}`).join(', ')):'';
-    state.logQueue.push({t:new Date().toISOString(),by:state.name,isn:record?.isn||raw,result:state.nextLogResult||(record?'พบ':'ไม่พบ'),qr_check:qr,meter_qr:label?.meter||'',diameter_qr:label?.diameter||'',kgs_qr:label?.kgs||'',raw:String(state.lastRaw||raw||'').slice(0,300)});
+    state.logQueue.push({t:new Date().toISOString(),by:state.name,isn:record?.isn||raw,result:result||state.nextLogResult||(record?'พบ':'ไม่พบ'),qr_check:qr,meter_qr:label?.meter||'',diameter_qr:label?.diameter||'',kgs_qr:label?.kgs||'',raw:String(state.lastRaw||raw||'').slice(0,300)});
     state.nextLogResult='';if(state.logQueue.length>5000)state.logQueue.splice(0,state.logQueue.length-5000);saveLogQueue();setTimeout(flushLog,1200);
   }
   async function flushLog(){
@@ -179,7 +185,7 @@
       if(caps.zoom){$('zoom-slider').min=caps.zoom.min;$('zoom-slider').max=Math.min(caps.zoom.max,5);$('zoom-slider').step=caps.zoom.step||0.1;$('zoom-slider').value=track.getSettings().zoom||caps.zoom.min;$('zoom-label').textContent=Number($('zoom-slider').value).toFixed(1)+'×';}
       const cameras=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');$('camera-select').replaceChildren();for(const camera of cameras){const option=document.createElement('option');option.value=camera.deviceId;option.textContent=camera.label||'กล้อง';$('camera-select').append(option);}$('camera-select').value=track.getSettings().deviceId||deviceId;$('camera-select').hidden=cameras.length<2;
       $('camera-controls').hidden=!caps.torch&&!caps.zoom&&cameras.length<2;$('viewfinder').classList.add('active');$('camera-placeholder').hidden=true;$('stop-camera').hidden=false;$('scan-hint').hidden=false;$('camera-status').textContent='พร้อมอ่าน';state.paused=false;state.last='';
-      const worker=new Worker('./scanner-worker.js?v=1.2.1');state.worker=worker;
+      const worker=new Worker('./scanner-worker.js?v=1.3.0');state.worker=worker;
       const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});
       const tick=()=>{if(!state.stream||generation!==state.generation)return;if(state.paused||$('settings-dialog').open||$('add-dialog').open||$('video').readyState<2){state.timer=setTimeout(tick,150);return;}state.frame++;const video=$('video'),ratio=Math.min(1,(state.frame%4===0?1920:1280)/video.videoWidth);canvas.width=Math.round(video.videoWidth*ratio);canvas.height=Math.round(video.videoHeight*ratio);ctx.drawImage(video,0,0,canvas.width,canvas.height);const image=ctx.getImageData(0,0,canvas.width,canvas.height);worker.postMessage({id:state.frame,pixels:image.data.buffer,width:image.width,height:image.height},[image.data.buffer]);};
       worker.onmessage=event=>{if(!state.stream||generation!==state.generation)return;if(event.data.error){message(event.data.error,true);stopCamera();return;}accept(event.data.results||[]);state.timer=setTimeout(tick,90);};worker.onerror=()=>{message('โหลดตัวอ่านไม่สำเร็จ ลองโหลดหน้าเว็บใหม่แล้วเปิดกล้องอีกครั้ง',true);stopCamera();};tick();message('');startNativeDetector(generation);
@@ -188,13 +194,41 @@
   }
   async function readPhoto(file){
     if(!state.connected){openSettings();return;}if(file.size>20*1024*1024){message('เลือกรูปขนาดไม่เกิน 20 MB',true);return;}
-    const wasPaused=state.paused;let completed=false;state.paused=true;message('กำลังอ่านรหัสจากรูป…');const worker=new Worker('./scanner-worker.js?v=1.2.1');let timeout;
+    const wasPaused=state.paused;let completed=false;state.paused=true;message('กำลังอ่านรหัสจากรูป…');const worker=new Worker('./scanner-worker.js?v=1.3.0');let timeout;
     try{const bitmap=await createImageBitmap(file);const ratio=Math.min(1,3000/Math.max(bitmap.width,bitmap.height)),canvas=document.createElement('canvas');canvas.width=Math.round(bitmap.width*ratio);canvas.height=Math.round(bitmap.height*ratio);const ctx=canvas.getContext('2d');ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();const image=ctx.getImageData(0,0,canvas.width,canvas.height);
       const hits=await new Promise((resolve,reject)=>{timeout=setTimeout(()=>reject(new Error('อ่านรูปหมดเวลา กรุณาลองรูปที่ชัดขึ้น')),20000);worker.onmessage=e=>e.data.error?reject(new Error(e.data.error)):resolve(e.data.results||[]);worker.onerror=()=>reject(new Error('โหลดตัวอ่านรูปไม่สำเร็จ'));worker.postMessage({id:0,photo:true,pixels:image.data.buffer,width:image.width,height:image.height},[image.data.buffer]);});
       state.paused=false;if(hits.length){completed=true;message('');accept(hits,true);}else message('ยังอ่านรหัสจากรูปนี้ไม่ได้ ลองถ่ายให้รหัสครบและชัดขึ้น',true);
     }catch(error){message(error.message||'เปิดรูปไม่สำเร็จ',true);}finally{clearTimeout(timeout);worker.terminate();if(!$('choices-dialog').open&&!completed)state.paused=wasPaused;}
   }
-  $('add-record-button').onclick=openAdd;$('add-form').onsubmit=saveAdd;for(const id of ['add-close','add-cancel'])$(id).onclick=()=>{if(!state.adding)$('add-dialog').close();};$('add-dialog').oncancel=event=>{if(state.adding)event.preventDefault();};
+
+  /* ---------- 1.3: หน้าต่างผลสแกน (ตกลง / กรอกเพิ่ม / ×) ---------- */
+  function markHistory(row,text){if(row&&row.lastChild)row.lastChild.textContent=text;}
+  function resumeScan(){state.dialog=null;if($('continuous').checked){state.paused=false;$('scan-hint').textContent='กำลังค้นหารหัส…';}else{state.paused=true;$('scan-hint').textContent='พักอ่านรหัส — กดสแกนถัดไป';}}
+  function el(tag,cls,text){const node=document.createElement(tag);if(cls)node.className=cls;if(text!==undefined)node.textContent=text;return node;}
+  function openScanDialog(record,raw,label,historyRow){
+    state.paused=true;state.dialog={record,raw,label,historyRow};const body=$('scan-dialog-body');body.replaceChildren();
+    $('scan-dialog').className='scan-dialog '+(record?'found':'missing');$('scan-dialog-title').textContent=record?'✓ มีข้อมูลอยู่แล้ว':'ไม่พบข้อมูล';
+    body.append(el('div','scan-dialog-label','ISN'),el('div','scan-dialog-isn',record?.isn||raw));
+    if(record){
+      const grid=el('div','metrics scan-dialog-metrics');for(const[field,th]of[['meter','ความยาว'],['diameter','เส้นผ่านศูนย์กลาง'],['kgs','น้ำหนัก (กก.)']]){const box=el('div');box.append(el('span','',field),el('b','',record[field]||'—'),el('small','',th));grid.append(box);}body.append(grid);
+      const checks=label?DATA.compareLabel(record,label):null;
+      if(checks){const same=checks.every(c=>c.match);body.append(el('p','scan-dialog-note '+(same?'same':'different'),same?'ค่าบน QR ตรงกับชีต':'ค่าบน QR ต่างจากชีต: '+checks.filter(c=>!c.match).map(c=>`${c.field} ชีต ${c.sheet||'—'} / QR ${c.printed||'—'}`).join(', ')));}
+      if(record.checked_at)body.append(el('p','scan-dialog-note','เคยยืนยันแล้ว '+record.checked_at+(record.checked_by?' โดย '+record.checked_by:'')));
+      body.append(el('p','scan-dialog-hint','กด ตกลง เพื่อบันทึกว่าตรวจม้วนนี้แล้ว (meter / diameter / kgs ในชีตไม่เปลี่ยน)'));
+    }else body.append(el('p','scan-dialog-hint','ISN นี้ยังไม่มีในชีต กด กรอกเพิ่ม เพื่อเพิ่มเป็นแถวใหม่ใน wh1-14'));
+    $('scan-dialog-ok').hidden=!record;$('scan-dialog-add').hidden=!!record;$('scan-dialog').showModal();(record?$('scan-dialog-ok'):$('scan-dialog-add')).focus();
+  }
+  function closeScanDialog(result){
+    const dialog=state.dialog;if($('scan-dialog').open)$('scan-dialog').close();if(!dialog)return resumeScan();
+    enqueueLog(dialog.record,dialog.raw,dialog.label,result);markHistory(dialog.historyRow,result);
+    if(result==='ยืนยัน'&&dialog.record){dialog.record.checked_at=new Date().toLocaleString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});dialog.record.checked_by=state.name;saveIndexCache(state.records);message('ยืนยันแล้ว — บันทึกลง wh1-14');}
+    resumeScan();
+  }
+  $('scan-dialog-ok').onclick=()=>closeScanDialog('ยืนยัน');
+  $('scan-dialog-close').onclick=()=>closeScanDialog('ยกเลิก');
+  $('scan-dialog').addEventListener('cancel',event=>{event.preventDefault();closeScanDialog('ยกเลิก');});
+  $('scan-dialog-add').onclick=()=>{const dialog=state.dialog;state.dialog=null;$('scan-dialog').close();state.addHistoryRow=dialog?.historyRow;openAdd();};
+  $('add-record-button').onclick=()=>{state.addHistoryRow=null;openAdd();};$('add-form').onsubmit=saveAdd;for(const id of ['add-close','add-cancel'])$(id).onclick=()=>{if(!state.adding)$('add-dialog').close();};$('add-dialog').oncancel=event=>{if(state.adding)event.preventDefault();};$('add-dialog').addEventListener('close',()=>{if(state.addSaved)return;enqueueLog(null,state.missingScan?.isn||$('missing-code').textContent,state.missingScan?.meter?state.missingScan:null,'ยกเลิก');markHistory(state.addHistoryRow,'ยกเลิก');resumeScan();});
   $('settings-button').onclick=openSettings;$('settings-form').onsubmit=connect;document.querySelector('.dialog-close').onclick=()=>$('settings-dialog').close();$('disconnect-button').onclick=disconnect;
   $('refresh-button').onclick=()=>refresh().catch(()=>{});$('search-form').onsubmit=event=>{event.preventDefault();lookup($('code-input').value);};
   $('start-camera').onclick=()=>{unlockAudio();startCamera(storage.get('rollscan-camera'));};$('stop-camera').onclick=stopCamera;$('camera-select').onchange=()=>{storage.set('rollscan-camera',$('camera-select').value);startCamera($('camera-select').value);};
@@ -210,7 +244,7 @@
   $('api-url').addEventListener('input',()=>{const pasted=$('api-url').value.trim().match(/#connect=([A-Za-z0-9_-]+)/);if(!pasted)return;try{const data=JSON.parse(b64url.dec(pasted[1]));$('api-url').value=String(data.u||'');$('access-key').value=String(data.k||'');$('settings-error').textContent='';}catch{$('settings-error').textContent='ลิงก์เชื่อมต่อไม่ถูกต้อง';}});
   $('scanner-name').onchange=event=>{state.name=event.target.value.trim().slice(0,60);storage.set('rollscan-name',state.name);};
   $('share-copy').onclick=async()=>{try{await navigator.clipboard.writeText(shareLink());$('share-copy').textContent='คัดลอกแล้ว ✓';setTimeout(()=>$('share-copy').textContent='คัดลอกลิงก์',1800);}catch{prompt('คัดลอกลิงก์นี้',shareLink());}};
-  $('share-native').hidden=!navigator.share;$('share-native').onclick=()=>navigator.share({title:'RollScan — เชื่อมต่อ',url:shareLink()}).catch(()=>{});
+  $('share-native').hidden=!navigator.share;$('share-print').onclick=printQr;$('share-native').onclick=()=>navigator.share({title:'RollScan — เชื่อมต่อ',url:shareLink()}).catch(()=>{});
   updateLogBadge();
   if(state.apiUrl&&state.accessKey){try{state.apiUrl=apiUrl(state.apiUrl);const cached=loadIndexCache();refresh(false,cached).then(()=>{if(fromLink)message('เชื่อมต่อด้วยลิงก์แล้ว — เครื่องนี้จำไว้แล้ว พร้อมสแกน');}).catch(()=>{if(!cached)openSettings();});}catch{openSettings();}}
   else message('ตั้งค่าการเชื่อมต่อครั้งแรก เพื่อโหลดข้อมูลจาก Google Sheets');
