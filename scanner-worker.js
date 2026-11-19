@@ -9,10 +9,13 @@ function adaptive(image){
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){const l=Math.max(0,x-radius),r=Math.min(w,x+radius+1),t=Math.max(0,y-radius),b=Math.min(h,y+radius+1),mean=(sum[b*pitch+r]-sum[t*pitch+r]-sum[b*pitch+l]+sum[t*pitch+l])/((r-l)*(b-t));const value=gray[y*w+x]<mean-8?0:255,j=(y*w+x)*4;output[j]=output[j+1]=output[j+2]=value;output[j+3]=255;}
   return makeImage(output,w,h);
 }
+// กล้องสด: เฟรมถูกตัด/ขยายมาแล้วจากหน้าเว็บ อ่านครั้งเดียวแบบเร็ว (ฉลากเป็นหมึกดำบนพื้นขาว ไม่ต้องลองกลับสี)
+const LIVE_OPTIONS={formats:['QRCode','Code39','Code128','Code93','ITF','DataMatrix'],tryHarder:true,tryRotate:true,tryInvert:false,tryDownscale:true,maxNumberOfSymbols:4};
 self.onmessage=async event=>{
-  const {id,pixels,width,height,photo}=event.data;
+  const {id,pixels,width,height,photo,live}=event.data;
   try {
     const image=makeImage(new Uint8ClampedArray(pixels),width,height);
+    if(live){const hits=(await ZXingWASM.readBarcodes(image,LIVE_OPTIONS)).filter(r=>r.isValid);self.postMessage({id,results:hits.map(r=>({text:r.text,format:r.format}))});return;}
     let results=(await ZXingWASM.readBarcodes(image,OPTIONS)).filter(r=>r.isValid);
     const useful=hits=>hits.some(r=>r.format==='QRCode'||/^[A-Z][A-Z0-9]{9}$/.test(r.text.trim()));
     if(!useful(results)&&typeof OffscreenCanvas!=='undefined'&&typeof ImageData==='function'){

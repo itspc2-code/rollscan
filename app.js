@@ -68,7 +68,7 @@
     if(!hits.length||state.paused||state.checking||$('settings-dialog').open||$('add-dialog').open||$('scan-dialog').open)return;
     const unique=DATA.groupHits(hits),signature=unique.map(h=>h.scan.isn).sort().join('|');
     if(!photo&&signature===state.last){const richer=unique.find(h=>h.scan.label&&h.scan.isn===state.displayedIsn);if(richer&&!state.lastHadLabel){const record=state.records.find(r=>r.isn===state.displayedIsn);renderComparison(record,richer.scan.label);state.lastHadLabel=true;}return;}
-    const repeat=!photo&&unique.some(h=>!['QRCode','DataMatrix','PDF417'].includes(h.format));const now=Date.now();
+    const repeat=!photo&&unique.some(h=>!['QRCode','DataMatrix','PDF417'].includes(h.format)&&!state.index.has(h.scan.isn));const now=Date.now();
     if(repeat&&(state.seen.text!==signature||now-state.seen.at>2500)){state.seen={text:signature,at:now};return;}
     state.last=signature;
     if(unique.length>1)choose(unique.map(h=>({label:h.scan.isn,code:h.text})),entry=>lookup(entry.code));else lookup(unique[0].text);
@@ -185,22 +185,30 @@
       if(caps.zoom){$('zoom-slider').min=caps.zoom.min;$('zoom-slider').max=Math.min(caps.zoom.max,5);$('zoom-slider').step=caps.zoom.step||0.1;$('zoom-slider').value=track.getSettings().zoom||caps.zoom.min;$('zoom-label').textContent=Number($('zoom-slider').value).toFixed(1)+'×';}
       const cameras=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');$('camera-select').replaceChildren();for(const camera of cameras){const option=document.createElement('option');option.value=camera.deviceId;option.textContent=camera.label||'กล้อง';$('camera-select').append(option);}$('camera-select').value=track.getSettings().deviceId||deviceId;$('camera-select').hidden=cameras.length<2;
       $('camera-controls').hidden=!caps.torch&&!caps.zoom&&cameras.length<2;$('viewfinder').classList.add('active');$('camera-placeholder').hidden=true;$('stop-camera').hidden=false;$('scan-hint').hidden=false;$('camera-status').textContent='พร้อมอ่าน';state.paused=false;state.last='';
-      const worker=new Worker('./scanner-worker.js?v=1.3.0');state.worker=worker;
+      const worker=new Worker('./scanner-worker.js?v=1.3.1');state.worker=worker;
       const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});
-      const tick=()=>{if(!state.stream||generation!==state.generation)return;if(state.paused||$('settings-dialog').open||$('add-dialog').open||$('video').readyState<2){state.timer=setTimeout(tick,150);return;}state.frame++;const video=$('video'),ratio=Math.min(1,(state.frame%4===0?1920:1280)/video.videoWidth);canvas.width=Math.round(video.videoWidth*ratio);canvas.height=Math.round(video.videoHeight*ratio);ctx.drawImage(video,0,0,canvas.width,canvas.height);const image=ctx.getImageData(0,0,canvas.width,canvas.height);worker.postMessage({id:state.frame,pixels:image.data.buffer,width:image.width,height:image.height},[image.data.buffer]);};
-      worker.onmessage=event=>{if(!state.stream||generation!==state.generation)return;if(event.data.error){message(event.data.error,true);stopCamera();return;}accept(event.data.results||[]);state.timer=setTimeout(tick,90);};worker.onerror=()=>{message('โหลดตัวอ่านไม่สำเร็จ ลองโหลดหน้าเว็บใหม่แล้วเปิดกล้องอีกครั้ง',true);stopCamera();};tick();message('');startNativeDetector(generation);
+      const tick=()=>{if(!state.stream||generation!==state.generation)return;if(state.paused||$('settings-dialog').open||$('add-dialog').open||$('scan-dialog').open||$('video').readyState<2){state.timer=setTimeout(tick,150);return;}state.frame++;
+        // 1.3.1 กล้องสด: แต่ละเฟรมอ่านคนละส่วน (ทั้งภาพ / กลางจอขยาย 2× / แบ่ง 2×2 และ 3×3 แล้วขยาย) วนครบทุก ~1–2 วินาที ทำให้โค้ดเล็ก/ไกลอ่านติด
+        const video=$('video'),vw=video.videoWidth,vh=video.videoHeight,pass=LIVE_PLAN[state.frame%LIVE_PLAN.length];let sx=0,sy=0,sw=vw,sh=vh,scale=1;
+        if(pass.kind==='full')scale=Math.min(1,1600/Math.max(vw,vh));
+        else if(pass.kind==='center'){sw=vw*pass.crop;sh=vh*pass.crop;sx=(vw-sw)/2;sy=(vh-sh)/2;scale=pass.scale;}
+        else{const g=pass.g;sw=Math.min(vw,vw/g*1.35);sh=Math.min(vh,vh/g*1.35);sx=pass.i*(vw-sw)/(g-1);sy=pass.j*(vh-sh)/(g-1);scale=pass.scale;}
+        scale=Math.min(scale,2400/Math.max(sw,sh));canvas.width=Math.max(1,Math.round(sw*scale));canvas.height=Math.max(1,Math.round(sh*scale));ctx.imageSmoothingQuality='high';ctx.drawImage(video,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
+        const image=ctx.getImageData(0,0,canvas.width,canvas.height);worker.postMessage({id:state.frame,live:true,pixels:image.data.buffer,width:image.width,height:image.height},[image.data.buffer]);};
+      worker.onmessage=event=>{if(!state.stream||generation!==state.generation)return;if(event.data.error){message(event.data.error,true);stopCamera();return;}accept(event.data.results||[]);state.timer=setTimeout(tick,25);};worker.onerror=()=>{message('โหลดตัวอ่านไม่สำเร็จ ลองโหลดหน้าเว็บใหม่แล้วเปิดกล้องอีกครั้ง',true);stopCamera();};tick();message('');startNativeDetector(generation);
     }catch(error){stopCamera();message(error.name==='NotAllowedError'?'ยังไม่ได้รับอนุญาตกล้อง กรุณาอนุญาตกล้องให้เว็บไซต์นี้ใน Edge':error.message,true);}
     finally{state.starting=false;$('start-camera').disabled=false;$('start-camera').textContent='เปิดกล้องสแกน';}
   }
   async function readPhoto(file){
     if(!state.connected){openSettings();return;}if(file.size>20*1024*1024){message('เลือกรูปขนาดไม่เกิน 20 MB',true);return;}
-    const wasPaused=state.paused;let completed=false;state.paused=true;message('กำลังอ่านรหัสจากรูป…');const worker=new Worker('./scanner-worker.js?v=1.3.0');let timeout;
+    const wasPaused=state.paused;let completed=false;state.paused=true;message('กำลังอ่านรหัสจากรูป…');const worker=new Worker('./scanner-worker.js?v=1.3.1');let timeout;
     try{const bitmap=await createImageBitmap(file);const ratio=Math.min(1,3000/Math.max(bitmap.width,bitmap.height)),canvas=document.createElement('canvas');canvas.width=Math.round(bitmap.width*ratio);canvas.height=Math.round(bitmap.height*ratio);const ctx=canvas.getContext('2d');ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();const image=ctx.getImageData(0,0,canvas.width,canvas.height);
       const hits=await new Promise((resolve,reject)=>{timeout=setTimeout(()=>reject(new Error('อ่านรูปหมดเวลา กรุณาลองรูปที่ชัดขึ้น')),20000);worker.onmessage=e=>e.data.error?reject(new Error(e.data.error)):resolve(e.data.results||[]);worker.onerror=()=>reject(new Error('โหลดตัวอ่านรูปไม่สำเร็จ'));worker.postMessage({id:0,photo:true,pixels:image.data.buffer,width:image.width,height:image.height},[image.data.buffer]);});
       state.paused=false;if(hits.length){completed=true;message('');accept(hits,true);}else message('ยังอ่านรหัสจากรูปนี้ไม่ได้ ลองถ่ายให้รหัสครบและชัดขึ้น',true);
     }catch(error){message(error.message||'เปิดรูปไม่สำเร็จ',true);}finally{clearTimeout(timeout);worker.terminate();if(!$('choices-dialog').open&&!completed)state.paused=wasPaused;}
   }
 
+  const LIVE_PLAN=(()=>{const tiles=(g,scale)=>{const out=[];for(let j=0;j<g;j++)for(let i=0;i<g;i++)out.push({kind:'tile',g,i,j,scale});return out;};const plan=[];[{kind:'center',crop:.6,scale:2},...tiles(2,1.5),...tiles(3,2)].forEach((pass,k)=>{if(k%3===0)plan.push({kind:'full'});plan.push(pass);});return plan;})();
   /* ---------- 1.3: หน้าต่างผลสแกน (ตกลง / กรอกเพิ่ม / ×) ---------- */
   function markHistory(row,text){if(row&&row.lastChild)row.lastChild.textContent=text;}
   function resumeScan(){state.dialog=null;if($('continuous').checked){state.paused=false;$('scan-hint').textContent='กำลังค้นหารหัส…';}else{state.paused=true;$('scan-hint').textContent='พักอ่านรหัส — กดสแกนถัดไป';}}
